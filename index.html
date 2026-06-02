@@ -9,6 +9,7 @@
         :root {
             --primary: #2c3e50;
             --success: #27ae60;
+            --warning: #e67e22;
             --bg: #f4f7f6;
             --card-bg: #ffffff;
         }
@@ -42,7 +43,7 @@
             border-radius: 12px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             text-align: center;
-            min-width: 200px;
+            min-width: 250px;
             border-top: 5px solid var(--success);
         }
         .card h2 {
@@ -56,6 +57,13 @@
             color: var(--success);
             margin: 10px 0 0 0;
         }
+        .section-title {
+            width: 100%;
+            max-width: 1000px;
+            margin: 30px 0 10px 0;
+            font-size: 1.4rem;
+            color: var(--primary);
+        }
         table {
             width: 100%;
             max-width: 1000px;
@@ -64,6 +72,7 @@
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             border-radius: 12px;
             overflow: hidden;
+            margin-bottom: 20px;
         }
         th, td {
             padding: 15px;
@@ -87,13 +96,21 @@
             font-size: 0.8rem;
             font-weight: bold;
         }
+        .debug-table th {
+            background-color: #7f8c8d;
+        }
+        .reason-badge {
+            color: #c0392b;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 <body>
 
     <div class="header">
         <h1>Reporte de Gestión: STEFANY</h1>
-        <p>Actualización automática desde Google Sheets</p>
+        <p>Conexión en vivo con procesamiento de datos inteligente</p>
     </div>
 
     <div class="dashboard">
@@ -103,6 +120,7 @@
         </div>
     </div>
 
+    <div class="section-title">✓ Empresas que cumplen el 100% de condiciones</div>
     <table id="tabla-reporte">
         <thead>
             <tr>
@@ -115,14 +133,34 @@
         </thead>
         <tbody id="cuerpo-tabla">
             <tr>
-                <td colspan="5" style="text-align: center;">Cargando datos en vivo...</td>
+                <td colspan="5" style="text-align: center;">Cargando datos desde la nube...</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="section-title" style="color: #7f8c8d;">🔍 Panel de Diagnóstico (Empresas no incluidas)</div>
+    <table class="debug-table">
+        <thead>
+            <tr>
+                <th>Empresa de la fila</th>
+                <th>Causa de exclusión del reporte</th>
+            </tr>
+        </thead>
+        <tbody id="cuerpo-debug">
+            <tr>
+                <td colspan="2" style="text-align: center; color: #7f8c8d;">Analizando condiciones...</td>
             </tr>
         </tbody>
     </table>
 
     <script>
-        // Enlace corregido a formato CSV
         const urlCSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vREKYHN32PLKhhCu4ERe0k34ATr6cks2l1LzOs_gnm1e60aBbmGNQP2vwcujLbpow/pub?gid=1934689070&single=true&output=csv";
+
+        // Función para limpiar textos (quita espacios, tildes y pasa a mayúsculas)
+        function limpiarTexto(t) {
+            if (!t) return "";
+            return t.toString().trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        }
 
         function cargarDatos() {
             Papa.parse(urlCSV, {
@@ -132,66 +170,128 @@
                     procesarReporte(results.data);
                 },
                 error: function(err) {
-                    console.error("Error al cargar:", err);
-                    document.getElementById("cuerpo-tabla").innerHTML = '<tr><td colspan="5" style="color:red; text-align:center;">Error al cargar. Verifica la conexión.</td></tr>';
+                    console.error("Error:", err);
+                    document.getElementById("cuerpo-tabla").innerHTML = '<tr><td colspan="5" style="color:red; text-align:center;">Error de conexión con la base de datos.</td></tr>';
                 }
             });
         }
 
         function procesarReporte(datos) {
             let empresasAprobadas = [];
+            let empresasDescartadas = [];
 
-            datos.forEach(fila => {
-                // Extracción segura de columnas
-                const supervisor = fila["Supervisor"] ? fila["Supervisor"].trim().toUpperCase() : "";
-                const observaciones = fila["OBSERVACIONES "] ? fila["OBSERVACIONES "].trim().toUpperCase() : "";
-                const ip2 = fila["IP2"] ? fila["IP2"].trim().toUpperCase() : "";
-                
-                // Columnas de ejemplo para verificar que todo esté completo (ajústalas si tienes más)
-                const diagRealizados = fila["DIAGNOSTICOS REALIZADOS"] ? fila["DIAGNOSTICOS REALIZADOS"].trim().toUpperCase() : "";
-                const diagFirmados = fila["DIAGNOSTICO FIRMADOS"] ? fila["DIAGNOSTICO FIRMADOS"].trim().toUpperCase() : "";
+            datos.forEach((fila) => {
+                // Crear un mapa con las llaves limpias para evitar fallos de lectura por espacios
+                let filaLimpia = {};
+                Object.keys(fila).forEach(key => {
+                    filaLimpia[limpiarTexto(key)] = limpiarTexto(fila[key]);
+                });
 
-                // Evaluando las condiciones solicitadas
-                const esDeStefany = supervisor.includes("STEFANY");
-                const estaAprobada = observaciones === "APROBADA" || observaciones === "APROVADA" || observaciones === "APROBADAS";
-                const tieneIP2 = ip2 === "SI";
-                
-                // Condición de llenado (SI / OK)
-                const columnasCompletas = (diagRealizados === "SI" || diagRealizados === "OK") && (diagFirmados === "SI" || diagFirmados === "OK");
+                // Detectar las columnas de forma flexible
+                let kSupervisor = Object.keys(filaLimpia).find(k => k.includes("SUPERVISOR")) || "";
+                let kObservaciones = Object.keys(filaLimpia).find(k => k.includes("OBSERVACION")) || "";
+                let kIp2 = Object.keys(filaLimpia).find(k => k.includes("IP2")) || "";
+                let kEmpresa = Object.keys(filaLimpia).find(k => k.includes("EMPRESA")) || "";
+                let kVigencia = Object.keys(filaLimpia).find(k => k.includes("VIGENCIA")) || "";
 
-                if (esDeStefany && estaAprobada && tieneIP2 && columnasCompletas) {
-                    empresasAprobadas.push(fila);
+                let supervisor = filaLimpia[kSupervisor] || "";
+                let observaciones = filaLimpia[kObservaciones] || "";
+                let ip2 = filaLimpia[kIp2] || "";
+
+                // Conservar nombres originales con espacios para mostrarlos bien en la pantalla
+                let nombreEmpresaOriginal = fila[Object.keys(fila).find(k => limpiarTexto(k).includes("EMPRESA"))] || "";
+                let vigenciaOriginal = fila[Object.keys(fila).find(k => limpiarTexto(k).includes("VIGENCIA"))] || "-";
+                let observacionesOriginal = fila[Object.keys(fila).find(k => limpiarTexto(k).includes("OBSERVACION"))] || "-";
+                let ip2Original = fila[Object.keys(fila).find(k => limpiarTexto(k).includes("IP2"))] || "-";
+
+                // Si la fila está completamente vacía, ignorarla
+                if (!nombreEmpresaOriginal && !supervisor) return;
+
+                // Validaciones principales
+                let esDeStefany = supervisor.includes("STEFANY");
+                let estaAprobada = observaciones === "APROBADA" || observaciones === "APROVADA" || observaciones === "APROBADAS" || observaciones === "APROVADAS";
+                let tieneIP2 = ip2 === "SI";
+
+                // Validar dinámicamente el resto de las columnas (deben ser SI u OK si contienen datos)
+                let columnasAdicionalesCorrectas = true;
+                let detalleFalloColumna = "";
+
+                Object.keys(filaLimpia).forEach(k => {
+                    if (k !== kSupervisor && k !== kObservaciones && k !== kIp2 && k !== kEmpresa && k !== kVigencia && k !== "") {
+                        let valorCelda = filaLimpia[k];
+                        // Si la celda tiene contenido y no es válido, se marca el fallo
+                        if (valorCelda !== "" && valorCelda !== "SI" && valorCelda !== "OK") {
+                            columnasAdicionalesCorrectas = false;
+                            detalleFalloColumna = Object.keys(fila).find(origKey => limpiarTexto(origKey) === k) || k;
+                        }
+                    }
+                });
+
+                // Clasificación de la empresa
+                if (esDeStefany && estaAprobada && tieneIP2 && columnasAdicionalesCorrectas) {
+                    empresasAprobadas.push({
+                        vigencia: vigenciaOriginal,
+                        empresa: nombreEmpresaOriginal,
+                        obs: observacionesOriginal,
+                        ip2: ip2Original
+                    });
+                } else {
+                    // Registrar el motivo exacto para el diagnóstico en pantalla
+                    let motivos = [];
+                    if (!esDeStefany) motivos.push("No está asignada a STEFANY (Supervisor: " + (fila[Object.keys(fila).find(k => limpiarTexto(k).includes("SUPERVISOR"))] || "Vacío") + ")");
+                    if (!estaAprobada) motivos.push("Observaciones no es 'APROBADA' (Tiene: '" + observacionesOriginal + "')");
+                    if (!tieneIP2) motivos.push("IP2 no es 'SI' (Tiene: '" + ip2Original + "')");
+                    if (!columnasAdicionalesCorrectas) motivos.push("Columna [" + detalleFalloColumna + "] contiene datos diferentes a SI/OK");
+
+                    empresasDescartadas.push({
+                        empresa: nombreEmpresaOriginal || "Fila sin nombre definitivo",
+                        motivo: motivos.join(" | ")
+                    });
                 }
             });
 
-            mostrarEnPantalla(empresasAprobadas);
+            mostrarResultados(empresasAprobadas, empresasDescartadas);
         }
 
-        function mostrarEnPantalla(empresas) {
-            document.getElementById("contador").innerText = empresas.length;
-            const cuerpoTabla = document.getElementById("cuerpo-tabla");
-            cuerpoTabla.innerHTML = ""; 
+        function mostrarResultados(aprobadas, descartadas) {
+            // Actualizar número principal
+            document.getElementById("contador").innerText = aprobadas.length;
 
-            if (empresas.length === 0) {
-                cuerpoTabla.innerHTML = '<tr><td colspan="5" style="text-align: center;">No hay empresas que cumplan todas las condiciones en este momento.</td></tr>';
-                return;
+            // Renderizar Tabla Principal
+            const cuerpoTabla = document.getElementById("cuerpo-tabla");
+            cuerpoTabla.innerHTML = "";
+
+            if (aprobadas.length === 0) {
+                cuerpoTabla.innerHTML = '<tr><td colspan="5" style="text-align: center;">Ninguna empresa cumple todas las reglas simultáneamente todavía. Ver el panel inferior.</td></tr>';
+            } else {
+                aprobadas.forEach(emp => {
+                    let tr = document.createElement("tr");
+                    tr.innerHTML = `
+                        <td>${emp.vigencia}</td>
+                        <td><strong>${emp.empresa}</strong></td>
+                        <td>${emp.obs}</td>
+                        <td>${emp.ip2}</td>
+                        <td><span class="status-badge">Lista</span></td>
+                    `;
+                    cuerpoTabla.appendChild(tr);
+                });
             }
 
-            empresas.forEach(emp => {
-                const tr = document.createElement("tr");
+            // Renderizar Tabla Diagnóstica
+            const cuerpoDebug = document.getElementById("cuerpo-debug");
+            cuerpoDebug.innerHTML = "";
+
+            descartadas.forEach(emp => {
+                let tr = document.createElement("tr");
                 tr.innerHTML = `
-                    <td>${emp["Vigencia"] || "-"}</td>
-                    <td><strong>${emp["EMPRESAS "] || "Sin nombre"}</strong></td>
-                    <td>${emp["OBSERVACIONES "] || "-"}</td>
-                    <td>${emp["IP2"] || "-"}</td>
-                    <td><span class="status-badge">Lista / Aprobada</span></td>
+                    <td>${emp.empresa}</td>
+                    <td class="reason-badge">${emp.motivo}</td>
                 `;
-                cuerpoTabla.appendChild(tr);
+                cuerpoDebug.appendChild(tr);
             });
         }
 
-        // Iniciar la carga al abrir
-        cargarDatos();
+        window.onload = cargarDatos;
     </script>
 </body>
 </html>
